@@ -161,6 +161,31 @@
           </div>
           <div id="gh-repos" class="gh-repos"></div>
         </div>
+        <div class="gh-section">
+          <div class="gh-sec-head"><span>テンプレート</span></div>
+          <div style="padding:8px 10px;font-size:11px;color:var(--fg-dim)">リポジトリカードの「gitignore」「AGENTS.md」ボタンで作成される内容を編集できます。</div>
+          <div class="gh-actions">
+            <button id="gh-tpl-gitignore-btn" class="btn small">gitignore</button>
+            <button id="gh-tpl-agents-btn" class="btn small">AGENTS.md</button>
+          </div>
+          <div id="gh-tpl-gitignore-editor" class="gh-tpl-editor hidden" style="padding:0 10px 8px">
+            <label style="display:block;font-size:11px;color:var(--fg-dim);margin-bottom:4px">gitignore テンプレート</label>
+            <textarea id="gh-tpl-gitignore-text" rows="12" style="width:100%;box-sizing:border-box;padding:6px 8px;font-size:12px;font-family:monospace;background:#000;color:#fff;border:1px solid var(--border);white-space:pre" autocomplete="off"></textarea>
+            <div class="gh-actions" style="padding:6px 0 0">
+              <button id="gh-tpl-gitignore-save" class="btn small primary">保存</button>
+              <button id="gh-tpl-gitignore-cancel" class="btn small">キャンセル</button>
+            </div>
+          </div>
+          <div id="gh-tpl-agents-editor" class="gh-tpl-editor hidden" style="padding:0 10px 8px">
+            <label style="display:block;font-size:11px;color:var(--fg-dim);margin-bottom:4px">AGENTS.md テンプレート</label>
+            <textarea id="gh-tpl-agents-text" rows="12" style="width:100%;box-sizing:border-box;padding:6px 8px;font-size:12px;font-family:monospace;background:#000;color:#fff;border:1px solid var(--border);white-space:pre" autocomplete="off"></textarea>
+            <div class="gh-actions" style="padding:6px 0 0">
+              <button id="gh-tpl-agents-save" class="btn small primary">保存</button>
+              <button id="gh-tpl-agents-cancel" class="btn small">キャンセル</button>
+            </div>
+          </div>
+          <div id="gh-tpl-status" class="gh-status"></div>
+        </div>
       </div>
     </aside>
 

@@ -325,6 +325,7 @@ const GithubPanel = (() => {
       '<button class="btn small" data-act="force-pull" title="ローカルの変更をすべて破棄し、リモートの最新状態に合わせる">強制pull</button>' +
       '<button class="btn small" data-act="status">状態</button>' +
       '<button class="btn small" data-act="gitignore" title=".gitignore が無い場合のみ作成する">gitignore</button>' +
+      '<button class="btn small" data-act="agents" title="AGENTS.md が無い場合のみ作成する">AGENTS.md</button>' +
       '<button class="btn small" data-act="commit">コミット</button>' +
       '<button class="btn small" data-act="cancel" title="最新コミットと未コミット変更をすべて破棄して直前のコミット状態に戻す">キャンセル</button>' +
       '<button class="btn small" data-act="push">push</button>' +
@@ -403,6 +404,10 @@ const GithubPanel = (() => {
     }
     if (btn.dataset.act === "gitignore") {
       doCreateGitignore(id, btn);
+      return;
+    }
+    if (btn.dataset.act === "agents") {
+      doCreateAgents(id, btn);
       return;
     }
     if (btn.dataset.act === "first-push") {
@@ -687,6 +692,91 @@ const GithubPanel = (() => {
     }
   }
 
+  // AGENTS.md ボタン: リポジトリ内に無い場合のみ AGENTS.md を作成する
+  async function doCreateAgents(id, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = "作成中…"; }
+    try {
+      const res = await API.github.createAgents(id);
+      if (res.ok && res.created) {
+        toast("AGENTS.md を作成しました: " + (res.path || ""));
+      } else {
+        toast("既に AGENTS.md が存在するため作成しませんでした", true);
+      }
+    } catch (e) {
+      toast(e.message, true);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "AGENTS.md"; }
+    }
+  }
+
+  // ---- テンプレート（gitignore / AGENTS.md）の編集 ----
+  let templatesCache = null;
+
+  async function ensureTemplates() {
+    if (templatesCache) return templatesCache;
+    templatesCache = await API.github.templates();
+    return templatesCache;
+  }
+
+  function setTplStatus(msg, ok) {
+    const st = $("gh-tpl-status");
+    if (!st) return;
+    st.textContent = msg || "";
+    st.classList.toggle("ok", ok === true);
+    st.classList.toggle("err", ok === false);
+  }
+
+  async function toggleTemplateEditor(kind) {
+    const editorId = kind === "gitignore" ? "gh-tpl-gitignore-editor" : "gh-tpl-agents-editor";
+    const otherId = kind === "gitignore" ? "gh-tpl-agents-editor" : "gh-tpl-gitignore-editor";
+    const editor = $(editorId);
+    const other = $(otherId);
+    if (!editor) return;
+    if (!editor.classList.contains("hidden")) {
+      editor.classList.add("hidden");
+      return;
+    }
+    try {
+      const t = await ensureTemplates();
+      if (kind === "gitignore") $("gh-tpl-gitignore-text").value = t.gitignore || "";
+      else $("gh-tpl-agents-text").value = t.agents || "";
+      if (other) other.classList.add("hidden");
+      editor.classList.remove("hidden");
+      setTplStatus("", undefined);
+    } catch (e) {
+      setTplStatus("テンプレートの読み込みに失敗: " + e.message, false);
+      toast(e.message, true);
+    }
+  }
+
+  async function saveTemplate(kind) {
+    const isGitignore = kind === "gitignore";
+    const textEl = $(isGitignore ? "gh-tpl-gitignore-text" : "gh-tpl-agents-text");
+    const saveBtn = $(isGitignore ? "gh-tpl-gitignore-save" : "gh-tpl-agents-save");
+    const content = textEl ? textEl.value : "";
+    if (!content.trim()) {
+      setTplStatus("テンプレートが空です", false);
+      return toast("テンプレートが空です", true);
+    }
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
+    try {
+      const t = await ensureTemplates();
+      const gitignore = isGitignore ? content : t.gitignore;
+      const agents = isGitignore ? t.agents : content;
+      const res = await API.github.saveTemplates(gitignore, agents);
+      templatesCache = { gitignore: res.gitignore, agents: res.agents };
+      if (!isGitignore) $("gh-tpl-agents-text").value = res.agents;
+      else $("gh-tpl-gitignore-text").value = res.gitignore;
+      setTplStatus((isGitignore ? "gitignore" : "AGENTS.md") + " テンプレートを保存しました", true);
+      toast("テンプレートを保存しました");
+    } catch (e) {
+      setTplStatus("保存に失敗: " + e.message, false);
+      toast(e.message, true);
+    } finally {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "保存"; }
+    }
+  }
+
   function isPullRemoteError(output) {
     if (!output) return false;
     const lower = String(output).toLowerCase();
@@ -903,6 +993,12 @@ const GithubPanel = (() => {
     $("gh-repos-collapse").onclick = collapseAllRepos;
     $("gh-repos-refresh").onclick = renderRepos;
     $("gh-repos").addEventListener("click", onReposClick);
+    if ($("gh-tpl-gitignore-btn")) $("gh-tpl-gitignore-btn").onclick = () => toggleTemplateEditor("gitignore");
+    if ($("gh-tpl-agents-btn")) $("gh-tpl-agents-btn").onclick = () => toggleTemplateEditor("agents");
+    if ($("gh-tpl-gitignore-save")) $("gh-tpl-gitignore-save").onclick = () => saveTemplate("gitignore");
+    if ($("gh-tpl-agents-save")) $("gh-tpl-agents-save").onclick = () => saveTemplate("agents");
+    if ($("gh-tpl-gitignore-cancel")) $("gh-tpl-gitignore-cancel").onclick = () => $("gh-tpl-gitignore-editor").classList.add("hidden");
+    if ($("gh-tpl-agents-cancel")) $("gh-tpl-agents-cancel").onclick = () => $("gh-tpl-agents-editor").classList.add("hidden");
     $("gh-settings-toggle").onclick = () => {
       const sec = $("gh-settings-section");
       const collapsed = sec.classList.toggle("collapsed");

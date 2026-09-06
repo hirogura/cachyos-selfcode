@@ -1749,8 +1749,10 @@ app.post("/api/github/repos/:id/action", async (req, res, next) => {
   }
 });
 
-// 登録済みリポジトリのルートに .gitignore を作成する（既に存在する場合は何もしない）
-const GITIGNORE_TEMPLATE = [
+// ================= テンプレート（.gitignore / AGENTS.md） =================
+// テンプレートはサーバー側の JSON に保存し、GitHub パネルの「テンプレート」項目から編集できる。
+const TEMPLATES_FILE = process.env.SELFCODE_TEMPLATES || "/opt/lxd-data/note/selfcode/selfcode-templates.json";
+const DEFAULT_GITIGNORE_TEMPLATE = [
   ".env",
   ".env.*",
   "!.env.example",
@@ -1783,29 +1785,122 @@ const GITIGNORE_TEMPLATE = [
   "*.pfx",
   "",
 ].join("\n");
+const DEFAULT_AGENTS_TEMPLATE = [
+  "# AGENTS.md",
+  "",
+  "このリポジトリで AI エージェント（opencode / Codex / Claude 等）が作業する際のルール。",
+  "",
+  "## プロジェクト概要",
+  "- このプロジェクトは何をするものか、主要なディレクトリ構成を書く",
+  "- 例: `src/` アプリ本体 / `docs/` ドキュメント / `scripts/` 補助スクリプト",
+  "",
+  "## セットアップ / ビルド / テスト",
+  "- 依存関係の導入: `npm install`",
+  "- ビルド: `npm run build`",
+  "- テスト: `npm test`",
+  "- 上記がこのリポジトリと異なる場合は正しいコマンドに書き換える",
+  "",
+  "## コーディング規約",
+  "- 既存のコードスタイルに合わせる（フォーマッタ・リンタの設定があればそれに従う）",
+  "- 必要最小限の変更に留め、関係ないリファクタはしない",
+  "- 日本語でコメント・説明を書く",
+  "",
+  "## 注意事項",
+  "- 秘密情報（APIキー・トークン・パスワード）をコードやログに含めない",
+  "- `.env` や認証情報ファイルは作成・変更してもコミットしない",
+  "- 破壊的な操作（`rm -rf` / `git reset --hard` / `git push --force` 等）は事前に確認を取る",
+  "- 不明点があれば推測で進めず、質問して確認する",
+  "",
+].join("\n");
 
+let templatesCfg = null; // { gitignore: string, agents: string }（遅延読み込み）
+
+async function loadTemplates() {
+  if (templatesCfg) return templatesCfg;
+  templatesCfg = { gitignore: DEFAULT_GITIGNORE_TEMPLATE, agents: DEFAULT_AGENTS_TEMPLATE };
+  try {
+    const raw = await fsp.readFile(TEMPLATES_FILE, "utf8");
+    const d = JSON.parse(raw);
+    if (d && typeof d.gitignore === "string" && d.gitignore) templatesCfg.gitignore = d.gitignore;
+    if (d && typeof d.agents === "string" && d.agents) templatesCfg.agents = d.agents;
+  } catch {}
+  return templatesCfg;
+}
+
+async function saveTemplates() {
+  await fsp.mkdir(path.dirname(TEMPLATES_FILE), { recursive: true });
+  await fsp.writeFile(TEMPLATES_FILE, JSON.stringify(templatesCfg, null, 2));
+}
+
+// テンプレートの取得・保存
+app.get("/api/github/templates", async (req, res, next) => {
+  try {
+    const t = await loadTemplates();
+    res.json({ gitignore: t.gitignore, agents: t.agents });
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.put("/api/github/templates", async (req, res, next) => {
+  try {
+    const t = await loadTemplates();
+    if (req.body.gitignore !== undefined) t.gitignore = String(req.body.gitignore ?? "");
+    if (req.body.agents !== undefined) t.agents = String(req.body.agents ?? "");
+    if (!t.gitignore) return res.status(400).json({ error: "gitignore テンプレートが空です" });
+    if (!t.agents) return res.status(400).json({ error: "AGENTS.md テンプレートが空です" });
+    await saveTemplates();
+    res.json({ ok: true, gitignore: t.gitignore, agents: t.agents });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// 登録済みリポジトリのルートにテンプレートからファイルを作成する共通処理（既に存在する場合は何もしない）
+async function createRepoFileFromTemplate(repoPath, fileName, content) {
+  const target = (repoPath || "").replace(/\/+$/, "") + "/" + fileName;
+  let exists = false;
+  if (containerCtx) {
+    try { await runContainer(["test", "-e", target]); exists = true; } catch {}
+  } else {
+    try { await fsp.access(resolveRel(target)); exists = true; } catch {}
+  }
+  if (exists) return { created: false, path: target };
+  if (containerCtx) {
+    await runContainer(["tee", target], { input: Buffer.from(content, "utf8") });
+  } else {
+    const abs = resolveRel(target);
+    await fsp.mkdir(path.dirname(abs), { recursive: true });
+    await fsp.writeFile(abs, content);
+  }
+  return { created: true, path: target };
+}
+
+// 登録済みリポジトリのルートに .gitignore を作成する（既に存在する場合は何もしない）
 app.post("/api/github/repos/:id/gitignore", async (req, res, next) => {
   try {
     const id = String(req.params.id || "");
     const repo = githubCfg.repos.find((r) => r.id === id);
     if (!repo) return res.status(404).json({ error: "リポジトリが見つかりません" });
-    const target = (repo.path || "").replace(/\/+$/, "") + "/.gitignore";
-    // 既に存在する場合は作成しない
-    let exists = false;
-    if (containerCtx) {
-      try { await runContainer(["test", "-e", target]); exists = true; } catch {}
-    } else {
-      try { await fsp.access(resolveRel(target)); exists = true; } catch {}
-    }
-    if (exists) return res.json({ ok: false, existed: true, path: target });
-    if (containerCtx) {
-      await runContainer(["tee", target], { input: Buffer.from(GITIGNORE_TEMPLATE, "utf8") });
-    } else {
-      const abs = resolveRel(target);
-      await fsp.mkdir(path.dirname(abs), { recursive: true });
-      await fsp.writeFile(abs, GITIGNORE_TEMPLATE);
-    }
-    res.json({ ok: true, created: true, path: target });
+    const t = await loadTemplates();
+    const r = await createRepoFileFromTemplate(repo.path, ".gitignore", t.gitignore);
+    if (!r.created) return res.json({ ok: false, existed: true, path: r.path });
+    res.json({ ok: true, created: true, path: r.path });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// 登録済みリポジトリのルートに AGENTS.md を作成する（既に存在する場合は何もしない）
+app.post("/api/github/repos/:id/agents", async (req, res, next) => {
+  try {
+    const id = String(req.params.id || "");
+    const repo = githubCfg.repos.find((r) => r.id === id);
+    if (!repo) return res.status(404).json({ error: "リポジトリが見つかりません" });
+    const t = await loadTemplates();
+    const r = await createRepoFileFromTemplate(repo.path, "AGENTS.md", t.agents);
+    if (!r.created) return res.json({ ok: false, existed: true, path: r.path });
+    res.json({ ok: true, created: true, path: r.path });
   } catch (e) {
     next(e);
   }
