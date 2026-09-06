@@ -287,7 +287,7 @@ app.use(async (req, res, next) => {
 app.get("/api/status", (req, res) => {
   res.json({
     name: "selfcode",
-    version: "0.1.0",
+    version: "1.2.0",
     workspace: ROOT,
     container: containerCtx ? { name: containerCtx.name, runtime: containerCtx.runtime } : null,
     opencode: { ready: oc.ready, version: oc.version },
