@@ -2,6 +2,10 @@
 
 code-server のようにブラウザから使えて、opencodeやFreebuff、Google Antigravityとの連携機能やGitHubとの連携機能がある、セルフホスト型コードエディタです。
 
+2026/9/9 - Ubuntu版（ https://github.com/hirogura/selfcode ）と一本化したので、今後はそちらで。
+しばらくの間、こちらも残しておきます。
+
+
 - Monaco エディタ（VS Code と同じエディタエンジン）
 - ファイルツリー / タブ編集 / 保存（Ctrl+S）
 - xterm.js ターミナル（**分割**・**ユーザー切替**・**リフレッシュ**対応）
